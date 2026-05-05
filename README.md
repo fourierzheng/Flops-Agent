@@ -53,15 +53,23 @@ bash install.sh
     "name": "flops",
     "providers": {
         "MiniMax": {
-            "api_format": "anthropic",
             "api_key": "YOUR-API-KEY-HERE",
             "base_url": "https://api.minimaxi.com/anthropic",
             "models": {
                 "MiniMax-M2.7": {
-                    "max_tokens": 8192,
-                    "context_size": 200000,
-                    "thinking": true,
-                    "request_timeout": 600
+                    "max_tokens": 8192
+                }
+            }
+        },
+        "DeepSeek": {
+            "api_key": "YOUR-API-KEY-HERE",
+            "base_url": "https://api.deepseek.com/",
+            "models": {
+                "deepseek-v4-flash": {
+                    "max_tokens": 8192
+                },
+                "deepseek-v4-pro": {
+                    "max_tokens": 8192
                 }
             }
         },
@@ -71,21 +79,14 @@ bash install.sh
             "base_url": "https://api.kimi.com/coding/",
             "models": {
                 "Kimi-K2.6": {
-                    "max_tokens": 8192,
-                    "context_size": 128000,
-                    "thinking": true
+                    "max_tokens": 8192
                 }
             }
         }
     },
     "agent": {
-        "model": "MiniMax:MiniMax-M2.7",
-        "max_turns": 200,
-        "workspace": "/path/to/workspace"
-    },
-    "memory": {
-        "distill_interval": 10,
-        "enabled": true
+        "model": "DeepSeek:deepseek-v4-flash",
+        "max_turns": 200
     },
     "log": {
         "level": "INFO"
@@ -96,7 +97,52 @@ bash install.sh
 }
 ```
 
-模型引用格式为 `"ProviderName:ModelName"`（如 `"MiniMax:MiniMax-M2.7"`）。`api_format` 支持 `"anthropic"`、`"openai"` 或 `"auto"`（自动检测）。
+#### 配置字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | 否 | 应用名称，默认为 `"flops"` |
+| `providers` | object | 是 | 模型提供商配置，key 为提供商名称 |
+| `agent.model` | string | 是 | 默认模型，格式 `"ProviderName:ModelName"` |
+| `agent.max_turns` | int | 否 | 最大对话轮数，默认 200 |
+| `log.level` | string | 否 | 日志级别：`DEBUG` / `INFO` / `WARNING` / `ERROR`，默认 `INFO` |
+| `skills.paths` | string[] | 否 | 技能目录路径列表，默认 `["skills"]` |
+
+**Provider 字段说明：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `api_key` | string | 是 | API 密钥 |
+| `base_url` | string | 是 | API 请求地址 |
+| `api_format` | string | 否 | API 协议格式：`"anthropic"` / `"openai"` / `"auto"`（自动检测）。不填则默认为 OpenAI 格式 |
+| `models` | object | 是 | 模型列表，key 为模型名称，value 为模型参数 |
+
+**Model 字段说明：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `max_tokens` | int | 是 | 最大输出 token 数 |
+| `context_size` | int | 否 | 上下文窗口大小（仅用于展示信息） |
+| `thinking` | bool | 否 | 是否支持 extended thinking（Anthropic 格式专用） |
+| `request_timeout` | int | 否 | 请求超时时间（秒） |
+
+**可选配置（应用启动后自动生成）：**
+
+```json
+{
+    "memory": {
+        "enabled": true,
+        "distill_interval": 10
+    }
+}
+```
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `memory.enabled` | bool | `true` | 是否启用长期记忆 |
+| `memory.distill_interval` | int | `10` | 每 N 轮对话自动蒸馏记忆一次 |
+
+> 模型引用格式为 `"ProviderName:ModelName"`（如 `"DeepSeek:deepseek-v4-flash"`）。以上示例为敏感信息脱敏后的真实结构。
 
 ### 运行
 
