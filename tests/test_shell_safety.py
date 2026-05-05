@@ -1,5 +1,3 @@
-"""Test shell command safety analysis and execution."""
-
 import asyncio
 
 import pytest

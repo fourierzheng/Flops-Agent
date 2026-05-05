@@ -1,5 +1,3 @@
-"""CLI module for Flops Agent."""
-
 from __future__ import annotations
 
 import argparse
@@ -13,15 +11,30 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from rich.box import ROUNDED
 from rich.console import Console, Group
+from rich.live import Live
+from rich.markdown import Markdown as RichMarkdown
 from rich.panel import Panel
 from rich.text import Text
 
-# ── Replace StreamingRenderer with Rich Live ──────────────────────────────
-# StreamingRenderer uses raw \033[1A\033[2K which pollutes scrollback.
-# Rich Live handles cursor management properly, no scrollback corruption.
-
-from rich.live import Live
-from rich.markdown import Markdown as RichMarkdown
+from flops.config import Config
+from flops.const import HISTORY_PATH
+from flops.engine import Engine
+from flops.event import (
+    ErrorEvent,
+    ExitEvent,
+    LineEvent,
+    NoticeEvent,
+    StopEvent,
+    TextDeltaEvent,
+    ThinkingEvent,
+    ToolOutputEvent,
+    ToolResultEvent,
+    ToolUseEvent,
+    UsageEvent,
+)
+from flops.logger import logger
+from flops.schemas import StopReason, Usage
+from flops.tools import render_tool
 
 _SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 # Sentinel used as spinner placeholder in buffer — U+F000 is in Unicode Private Use Area,
@@ -137,7 +150,7 @@ class LiveRenderer:
             t.append(f"{'─' * tw}\n", style="magenta dim")
             if self._waiting_active:
                 self._spinner_idx = (self._spinner_idx + 1) % len(_SPINNER_CHARS)
-                t.append(f"\n{_SPINNER_CHARS[self._spinner_idx]} 处理中...")
+                t.append(f"\n{_SPINNER_CHARS[self._spinner_idx]} Processing...")
             yield t
             return
 
@@ -209,27 +222,6 @@ class LiveRenderer:
     def __exit__(self, *args):
         self.finalize()
         return False
-
-
-from flops.config import Config
-from flops.const import HISTORY_PATH
-from flops.engine import Engine
-from flops.event import (
-    ErrorEvent,
-    ExitEvent,
-    LineEvent,
-    NoticeEvent,
-    StopEvent,
-    TextDeltaEvent,
-    ThinkingEvent,
-    ToolOutputEvent,
-    ToolResultEvent,
-    ToolUseEvent,
-    UsageEvent,
-)
-from flops.logger import logger
-from flops.schemas import StopReason, Usage
-from flops.tools import render_tool
 
 
 def get_default_config_path() -> str:
@@ -799,7 +791,7 @@ def main():
 
     try:
         asyncio.run(async_main(args.config))
-    except SystemExit, KeyboardInterrupt:
+    except (SystemExit, KeyboardInterrupt):
         pass
     except Exception as e:
         Message.error(f"Error: {e}")

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from pydantic import BaseModel, Field
 import httpx
+from pydantic import BaseModel, Field
 
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
@@ -23,7 +23,7 @@ WEATHER_API = "https://api.open-meteo.com/v1/forecast"
 
 
 async def get_weather(city: str) -> WeatherResult:
-    # 1️⃣ 城市 -> 经纬度
+    # 1️⃣ City -> coordinates
     async with httpx.AsyncClient() as client:
         geo_resp = await client.get(GEO_API, params={"name": city, "count": 1})
         geo_data = geo_resp.json()
@@ -35,7 +35,7 @@ async def get_weather(city: str) -> WeatherResult:
         lat = location["latitude"]
         lon = location["longitude"]
 
-        # 2️⃣ 查询天气
+        # 2️⃣ Query weather
         weather_resp = await client.get(
             WEATHER_API,
             params={
@@ -68,7 +68,7 @@ class WeatherTool(Tool):
         try:
             result = await get_weather(params.city)
             return ToolResult(
-                content=f"{result.city} 当前温度 {result.temperature}°C, 风速 {result.windspeed} km/h, 天气代码 {result.weathercode}"
+                content=f"{result.city} current temperature {result.temperature}°C, wind speed {result.windspeed} km/h, weather code {result.weathercode}"
             )
         except Exception as e:
             return ToolResult(content=str(e), is_error=True)

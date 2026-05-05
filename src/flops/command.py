@@ -8,7 +8,7 @@ from flops.event import ChatEvent, ExitEvent, LineEvent, TextDeltaEvent
 from flops.llm import LLM
 from flops.logger import logger
 from flops.registry import Registry
-from flops.schemas import Skill
+from flops.schemas import Permission, Skill
 from flops.session import Conversation, Session
 from flops.snapshot import Snapshot
 from flops.state import State
@@ -30,6 +30,7 @@ class CommandContext:
     snapshot: Snapshot
     memory: "Memory"
     skills: Registry["Skill"] = field(default_factory=Registry)
+    permission: Permission = Permission.STANDARD
 
 
 _INIT_SYS_PROMPT = """You are a project initialization specialist. Your task is to analyze the current project structure and generate a comprehensive **AGENTS.md** developer guide.
@@ -95,6 +96,7 @@ class InitCommand(Command):
             ctx.snapshot,
             ctx.memory,
             tools=["Grep", "FileRead", "Glob", "List"],
+            permission=ctx.permission,
         )
         conv = Conversation()
 

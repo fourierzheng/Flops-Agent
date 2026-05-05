@@ -8,11 +8,11 @@ class Registry(Generic[T]):
         self._items: Dict[str, T] = {}
 
     def register(self, name: str, item: T) -> None:
-        """注册一个对象"""
+        """Register an object"""
         self._items[name] = item
 
     def get(self, name: str) -> T:
-        """获取对象（不存在会抛 KeyError）"""
+        """Get an object (raises KeyError if not found)"""
         return self._items[name]
 
     def keys(self) -> list[str]:

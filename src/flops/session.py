@@ -2,8 +2,8 @@ import atexit
 import json
 import os
 import time
-from dataclasses import asdict
 import uuid
+from dataclasses import asdict
 
 from flops.const import SESSIONS_DIR
 from flops.logger import logger

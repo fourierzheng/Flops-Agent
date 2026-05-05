@@ -1,5 +1,3 @@
-"""Memory tool: mem — query facts written by automatic distillation."""
-
 from pydantic import BaseModel, Field
 
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool

@@ -1,10 +1,12 @@
-from dataclasses import dataclass, field, fields, is_dataclass, MISSING
 import json
 import os
-from typing import List, Type, TypeVar, get_args, get_origin
 import warnings
+from dataclasses import dataclass, field, fields, is_dataclass, MISSING
+from enum import Enum
+from typing import List, Type, TypeVar, get_args, get_origin
 
 from flops.const import REQUEST_TIMEOUT
+from flops.schemas import Permission
 
 
 T = TypeVar("T")
@@ -46,6 +48,8 @@ def from_dict(cls: Type[T], data: dict) -> T:
                 k: from_dict(value_type, v) if is_dataclass(value_type) else v
                 for k, v in field_value.items()
             }
+        elif isinstance(field_type, type) and issubclass(field_type, Enum):
+            kwargs[f.name] = field_type(field_value)
         elif is_dataclass(field_type):
             kwargs[f.name] = from_dict(field_type, field_value)
         else:
@@ -98,6 +102,15 @@ class SkillsConfig:
 
 
 @dataclass
+class ToolConfig:
+    permission: Permission = Permission.STANDARD
+
+    def __post_init__(self):
+        if isinstance(self.permission, str):
+            self.permission = Permission(self.permission)
+
+
+@dataclass
 class Config:
     name: str
     providers: dict[str, ProviderConfig]
@@ -105,6 +118,7 @@ class Config:
     log: LogConfig = field(default_factory=LogConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    tool: ToolConfig = field(default_factory=ToolConfig)
 
     @classmethod
     def from_json(cls, path: str) -> "Config":
@@ -205,3 +219,6 @@ class Config:
                         f"Skills path '{path}' does not exist. "
                         "It will be skipped during skill loading."
                     )
+
+        # Validate tool section
+        # Enum validation is handled by Permission() constructor in from_dict

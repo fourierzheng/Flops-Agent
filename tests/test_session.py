@@ -155,9 +155,7 @@ def test_undo_last_turn_with_compressed_marker():
     s._add_message(Message(role="assistant", content=[TextBlock(text="reply2")]))
 
     # Now compress: write compressed marker, reset messages in memory
-    s._session_file.write(
-        json.dumps({"time": "2026-01-01 00:00:00", "compressed": True}) + "\n"
-    )
+    s._session_file.write(json.dumps({"time": "2026-01-01 00:00:00", "compressed": True}) + "\n")
     s._session_file.flush()
     s.messages = s.messages[:2]  # Keep only first turn in memory
 

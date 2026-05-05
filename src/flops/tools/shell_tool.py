@@ -5,7 +5,6 @@ import os
 import re
 
 import bashlex
-
 from pydantic import BaseModel, Field
 
 from flops.logger import logger

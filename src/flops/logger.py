@@ -1,6 +1,6 @@
 import logging
-from pathlib import Path
 import time
+from pathlib import Path
 
 from flops.config import LogConfig
 from flops.const import LOGS_DIR, MAX_LOG_FILES

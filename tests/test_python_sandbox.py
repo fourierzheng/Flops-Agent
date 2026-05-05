@@ -1,4 +1,3 @@
-"""Test Python sandbox security: module import whitelist."""
 import importlib
 
 from flops.tools.python_tool import _build_safe_builtins, _SAFE_MODULES, _BLOCKED_BUILTINS

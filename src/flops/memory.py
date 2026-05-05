@@ -1,5 +1,3 @@
-"""Memory module: manages STORE.db (facts) and FLOPS.md (charter)."""
-
 from collections import defaultdict
 import json
 from pathlib import Path

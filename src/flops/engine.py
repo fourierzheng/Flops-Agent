@@ -72,7 +72,7 @@ SYSTEM_PROMPT_TEMPLATE = """You are a coding assistant. You work with files, she
 def build_system_prompt(skills: Registry[Skill], workspace: str = "", charter: str = "") -> str:
     env_info = (
         f"- OS: {platform.system()} {platform.release()} ({platform.machine()})\n"
-        f"- Python: {sys.version.split()[0]}\n"
+        f"- Python: {sys.version.split()[0]} ({sys.executable})\n"
         f"- Working Directory: {workspace or os.getcwd()}"
     )
     skill_list = "\n".join(
@@ -111,6 +111,7 @@ class Engine:
         self._snapshot = Snapshot(TRASH_DIR / self._session.session_id, SESSIONS_DIR)
         self._conv_count = 0
         self._distill_interval = config.memory.distill_interval
+        self._permission = config.tool.permission
         self._pending_tasks: list[tuple[asyncio.Task, str]] = []
 
         logger.info("Engine initialization complete")
@@ -152,6 +153,7 @@ class Engine:
             self._snapshot,
             self._memory,
             self._skills,
+            permission=self._permission,
         )
         async for event in cmd.handle(ctx, args):
             yield event
@@ -171,7 +173,12 @@ class Engine:
         self._conv_count += 1
         conv = Conversation(self._session.messages)
         agent_ctx = AgentContext(
-            system_prompt, llm, self._skills, snapshot=self._snapshot, memory=self._memory
+            system_prompt,
+            llm,
+            self._skills,
+            snapshot=self._snapshot,
+            memory=self._memory,
+            permission=self._permission,
         )
         async for event in self._agent.chat(agent_ctx, conv, user_input):
             yield event

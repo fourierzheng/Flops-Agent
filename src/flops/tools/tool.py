@@ -10,7 +10,7 @@ from flops.llm import LLM
 from flops.logger import logger
 from flops.memory import Memory
 from flops.registry import Registry
-from flops.schemas import Skill, ToolResult, ToolUse
+from flops.schemas import Permission, Skill, ToolResult, ToolUse
 from flops.snapshot import Snapshot
 
 
@@ -24,6 +24,7 @@ class ToolContext:
     memory: Memory
     llm: LLM
     stream_chat: Callable[..., AsyncGenerator]
+    permission: Permission = Permission.STANDARD
 
 
 class Tool:

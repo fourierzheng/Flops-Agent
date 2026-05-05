@@ -1,8 +1,8 @@
 from html.parser import HTMLParser
 import re
 
-from pydantic import BaseModel, Field
 import httpx
+from pydantic import BaseModel, Field
 
 from flops.logger import logger
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool

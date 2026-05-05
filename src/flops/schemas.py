@@ -1,5 +1,3 @@
-"""Core types shared across the application."""
-
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -14,6 +12,12 @@ class StopReason(Enum):
     # extended stop reasons
     CONTINUE = "continue"
     INTERRUPT = "interrupt"
+
+
+class Permission(str, Enum):
+    BASIC = "basic"
+    STANDARD = "standard"
+    STRICT = "strict"
 
 
 @dataclass

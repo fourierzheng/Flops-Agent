@@ -14,6 +14,7 @@ from flops.llm import LLM
 from flops.logger import logger
 from flops.registry import Registry
 from flops.schemas import (
+    Permission,
     Skill,
     StopReason,
     TextBlock,
@@ -35,6 +36,7 @@ class AgentContext:
     snapshot: Snapshot
     memory: Memory
     tools: list[str] | None = None
+    permission: Permission = Permission.STANDARD
 
 
 class Agent:
@@ -61,13 +63,25 @@ class Agent:
 
         def stream_chat(system_prompt: str, task: str, tools: list[str] | None = None):
             agent_ctx = AgentContext(
-                system_prompt, ctx.llm, ctx.skills, ctx.snapshot, ctx.memory, tools
+                system_prompt,
+                ctx.llm,
+                ctx.skills,
+                ctx.snapshot,
+                ctx.memory,
+                tools,
+                permission=ctx.permission,
             )
             conv = Conversation()
             return self.chat(agent_ctx, conv, task)
 
         tctx = ToolContext(
-            self._workspace, ctx.skills, ctx.snapshot, ctx.memory, ctx.llm, stream_chat
+            self._workspace,
+            ctx.skills,
+            ctx.snapshot,
+            ctx.memory,
+            ctx.llm,
+            stream_chat,
+            permission=ctx.permission,
         )
         for tool_use in tool_uses:
             logger.info(f"Executing tool: {tool_use.name} with input: {tool_use.input}")

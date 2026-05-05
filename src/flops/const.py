@@ -1,5 +1,3 @@
-"""Constants and paths for flops."""
-
 import os
 from pathlib import Path
 

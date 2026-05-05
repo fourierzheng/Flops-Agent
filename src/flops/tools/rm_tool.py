@@ -3,6 +3,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
+from flops.schemas import Permission
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
 
@@ -101,15 +102,19 @@ class RmTool(Tool):
             file_path = str(Path(ctx.cwd) / file_path)
 
         # Security checks on resolved path
-        if is_protected_path(file_path):
-            logger.warning(f"Attempted to delete protected path: {file_path}")
-            return ToolResult(content=f"Cannot delete protected path: {file_path}", is_error=True)
+        if ctx.permission != Permission.BASIC:
+            if is_protected_path(file_path):
+                logger.warning(f"Attempted to delete protected path: {file_path}")
+                return ToolResult(
+                    content=f"Cannot delete protected path: {file_path}", is_error=True
+                )
 
-        if is_trying_to_escape_workspace(file_path, ctx.cwd):
-            logger.warning(f"Attempted to delete path outside workspace: {file_path}")
-            return ToolResult(
-                content=f"Cannot delete path outside workspace: {file_path}", is_error=True
-            )
+        if ctx.permission == Permission.STRICT:
+            if is_trying_to_escape_workspace(file_path, ctx.cwd):
+                logger.warning(f"Attempted to delete path outside workspace: {file_path}")
+                return ToolResult(
+                    content=f"Cannot delete path outside workspace: {file_path}", is_error=True
+                )
 
         path = Path(file_path)
 
