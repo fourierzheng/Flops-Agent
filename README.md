@@ -133,6 +133,9 @@ bash install.sh
     "memory": {
         "enabled": true,
         "distill_interval": 10
+    },
+    "tool": {
+        "permission": "standard"
     }
 }
 ```
@@ -141,6 +144,7 @@ bash install.sh
 |------|------|--------|------|
 | `memory.enabled` | bool | `true` | 是否启用长期记忆 |
 | `memory.distill_interval` | int | `10` | 每 N 轮对话自动蒸馏记忆一次 |
+| `tool.permission` | string | `"standard"` | rm 工具权限级别：`"basic"`（仅拦截 `..` 路径遍历）、`"standard"`（+ 拦截系统保护路径）、`"strict"`（+ 拦截 workspace 逃逸，旧版默认行为） |
 
 > 模型引用格式为 `"ProviderName:ModelName"`（如 `"DeepSeek:deepseek-v4-flash"`）。以上示例为敏感信息脱敏后的真实结构。
 
