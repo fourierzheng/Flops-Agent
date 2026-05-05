@@ -136,6 +136,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
     },
     "skills": {
         "paths": []
+    },
+    "tool": {
+        "permission": "standard"
     }
 }
 EOF

@@ -113,6 +113,9 @@ Create `~/.config/flops/config.json` or use project-level `config.json`:
         "distill_interval": 10,
         "enabled": true
     },
+    "tool": {
+        "permission": "standard"
+    },
     "log": { "level": "INFO" },
     "skills": { "paths": ["skills"] }
 }
@@ -195,9 +198,9 @@ User Input → Engine.run()
 
 ### Context Objects
 
-- **AgentContext**: system_prompt, llm, skills, snapshot, memory, [tools] - passed to agent.chat()
-- **ToolContext**: cwd, skills, snapshot, memory, llm, stream_chat - passed to tool.execute()
-- **CommandContext**: state, models, session, llm, agent, compactor, snapshot, skills, memory - for slash commands
+- **AgentContext**: system_prompt, llm, skills, snapshot, memory, permission, [tools] - passed to agent.chat()
+- **ToolContext**: cwd, skills, snapshot, memory, llm, stream_chat, permission - passed to tool.execute()
+- **CommandContext**: state, models, session, llm, agent, compactor, snapshot, skills, memory, permission - for slash commands
 - **Compactor**: need_compact(llm, session) / compact(llm, session) - for compression
 
 ### Event Types
