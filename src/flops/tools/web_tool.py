@@ -70,6 +70,15 @@ class WebTool(Tool):
     async def execute(self, ctx: ToolContext, params: WebFetchParams) -> ToolResult:
         url = params.url
         max_length = params.max_length
+
+        # Block file:// protocol to prevent local file reading
+        if url.startswith("file://"):
+            logger.warning(f"Blocked file:// URL: {url}")
+            return ToolResult(
+                content="Error: file:// URLs are not allowed for security reasons.",
+                is_error=True,
+            )
+
         logger.info(f"Fetching URL: {url} (max_length={max_length})")
         try:
             headers = {"User-Agent": "Mozilla/5.0 (compatible; flops-bot/0.1)"}

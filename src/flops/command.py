@@ -30,7 +30,7 @@ class CommandContext:
     snapshot: Snapshot
     memory: "Memory"
     skills: Registry["Skill"] = field(default_factory=Registry)
-    permission: Permission = Permission.STANDARD
+    permission: Permission = Permission.FULL
 
 
 _INIT_SYS_PROMPT = """You are a project initialization specialist. Your task is to analyze the current project structure and generate a comprehensive **AGENTS.md** developer guide.

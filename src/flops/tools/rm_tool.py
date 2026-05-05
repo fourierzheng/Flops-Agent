@@ -4,76 +4,12 @@ from pydantic import BaseModel, Field
 
 from flops.logger import logger
 from flops.schemas import Permission
-from flops.tools.tool import ToolContext, Tool, ToolResult, tool
+from flops.tools.tool import ToolContext, Tool, ToolResult, tool, is_outside_workspace
 
 
 class RmParams(BaseModel):
     file_path: str = Field(description="The path of the file or directory to delete.")
     recursive: bool = Field(default=False, description="If True, delete directories recursively.")
-
-
-# Paths that are protected and cannot be deleted
-PROTECTED_PATHS = {
-    "/",
-    "/bin",
-    "/boot",
-    "/dev",
-    "/etc",
-    "/lib",
-    "/lib64",
-    "/proc",
-    "/root",
-    "/sbin",
-    "/sys",
-    "/usr",
-    "/var",
-    "/home",
-}
-
-
-def is_protected_path(path: str) -> bool:
-    """Check if a path is protected from deletion."""
-    path = str(Path(path).resolve())
-    for protected in PROTECTED_PATHS:
-        if path == protected or path.startswith(protected + "/"):
-            return True
-    return False
-
-
-def contains_dangerous_pattern(path: str) -> bool:
-    """Check if a path contains dangerous patterns like '..' for directory traversal."""
-    # Check original path string for .. before resolving
-    if ".." in path:
-        return True
-    return False
-
-
-def is_trying_to_escape_workspace(original_path: str, cwd: str) -> bool:
-    """Check if a path is trying to escape the workspace."""
-    cwd_resolved = Path(cwd).resolve()
-
-    if not Path(original_path).is_absolute():
-        # For relative paths, resolve and check if it's outside cwd
-        try:
-            resolved = (cwd_resolved / original_path).resolve()
-            # Check if the resolved path is still under cwd
-            try:
-                resolved.relative_to(cwd_resolved)
-                return False
-            except ValueError:
-                return True
-        except Exception:
-            return True
-    else:
-        # For absolute paths, check if it's within cwd
-        try:
-            resolved = Path(original_path).resolve()
-            resolved.relative_to(cwd_resolved)
-            return False
-        except ValueError:
-            return True
-        except Exception:
-            return True
 
 
 @tool
@@ -90,40 +26,19 @@ class RmTool(Tool):
         file_path = params.file_path
         recursive = params.recursive
 
-        # Security check: dangerous patterns on original path BEFORE resolution
-        if contains_dangerous_pattern(file_path):
-            logger.warning(f"Attempted to delete path with dangerous pattern: {file_path}")
-            return ToolResult(
-                content=f"Cannot delete path with directory traversal: {file_path}", is_error=True
-            )
-
-        # Resolve to absolute path relative to cwd
+        # Resolve to absolute path
         if not Path(file_path).is_absolute():
             file_path = str(Path(ctx.cwd) / file_path)
 
-        # Security checks on resolved path
-        if ctx.permission != Permission.BASIC:
-            if is_protected_path(file_path):
-                logger.warning(f"Attempted to delete protected path: {file_path}")
-                return ToolResult(
-                    content=(
-                        f"Cannot delete protected path: {file_path}\n"
-                        f"Current permission level is '{ctx.permission.value}', "
-                        f"which blocks deletion of system paths. "
-                        f"Set `tool.permission` to `\"basic\"` in config.json to allow this."
-                    ),
-                    is_error=True,
-                )
-
-        if ctx.permission == Permission.STRICT:
-            if is_trying_to_escape_workspace(file_path, ctx.cwd):
+        # Workspace check for standard and strict
+        if ctx.permission != Permission.FULL:
+            if is_outside_workspace(file_path, ctx.cwd):
                 logger.warning(f"Attempted to delete path outside workspace: {file_path}")
                 return ToolResult(
                     content=(
                         f"Cannot delete path outside workspace: {file_path}\n"
-                        f"Current permission level is 'strict', "
-                        f"which blocks deletion outside the workspace directory. "
-                        f"Set `tool.permission` to `\"standard\"` or `\"basic\"` in config.json to allow this."
+                        f"Current permission level is '{ctx.permission.value}'. "
+                        f"Set `tool.permission` to `\"full\"` in config.json to allow this."
                     ),
                     is_error=True,
                 )

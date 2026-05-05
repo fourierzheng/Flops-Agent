@@ -36,7 +36,7 @@ class AgentContext:
     snapshot: Snapshot
     memory: Memory
     tools: list[str] | None = None
-    permission: Permission = Permission.STANDARD
+    permission: Permission = Permission.FULL
 
 
 class Agent:

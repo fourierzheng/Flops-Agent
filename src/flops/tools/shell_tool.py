@@ -8,6 +8,7 @@ import bashlex
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
+from flops.schemas import Permission
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
 
@@ -234,6 +235,17 @@ class ShellTool(Tool):
         command = params.command
         cwd = params.cwd
         work_dir = cwd or ctx.cwd
+
+        # Strict mode: shell is disabled
+        if ctx.permission == Permission.STRICT:
+            logger.warning(f"Shell blocked in strict mode: {command[:100]}...")
+            return ToolResult(
+                content=(
+                    "Shell is disabled in 'strict' permission mode. "
+                    "Set `tool.permission` to `\"standard\"` or `\"full\"` in config.json to enable shell access."
+                ),
+                is_error=True,
+            )
 
         # Analyze command for dangerous patterns
         is_safe, reason = analyze_command(command)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +14,10 @@ class StopReason(Enum):
     INTERRUPT = "interrupt"
 
 
-class Permission(str, Enum):
-    BASIC = "basic"
-    STANDARD = "standard"
-    STRICT = "strict"
+class Permission(StrEnum):
+    FULL = "full"          # 全放开，无限制
+    STANDARD = "standard"  # 写/改/删限 workspace，读取不限
+    STRICT = "strict"      # 写/改/删限 workspace + 禁用 Shell/Python
 
 
 @dataclass

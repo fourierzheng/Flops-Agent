@@ -125,7 +125,7 @@ class Memory:
             {
                 "domain": r[0],
                 "key": r[1],
-                "value": r[2],
+                "value": self._deserialize_value(r[2]),
                 "confidence": r[3],
                 "session_id": r[4],
                 "promoted": bool(r[5]),
@@ -135,12 +135,26 @@ class Memory:
             for r in rows
         ]
 
+    @staticmethod
+    def _deserialize_value(v: str) -> Any:
+        """Deserialize a value stored in SQLite back to its original type."""
+        if isinstance(v, str) and len(v) > 1 and v[0] in ("[", "{"):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return v
+
     def upsert(self, domain: str, key: str, value: str, mode: str = "auto") -> None:
         """Insert or update a fact.
 
         - mode="auto": increment confidence if exists (for auto-distill).
         - mode="confirm": set confidence to 5 (for user confirmation).
         """
+        # SQLite only supports scalars; serialize lists/dicts to JSON
+        if isinstance(value, (list, dict)):
+            value = json.dumps(value, ensure_ascii=False)
+
         existing = self._conn.execute(
             "SELECT id, confidence FROM facts WHERE domain = ? AND key = ?",
             (domain, key),

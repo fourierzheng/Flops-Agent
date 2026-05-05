@@ -1,7 +1,10 @@
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
-from flops.tools.tool import ToolContext, Tool, ToolResult, tool
+from flops.schemas import Permission
+from flops.tools.tool import ToolContext, Tool, ToolResult, tool, is_outside_workspace
 
 
 class FileEditParams(BaseModel):
@@ -26,6 +29,23 @@ class FileEditTool(Tool):
         new_str = params.new_str
         replace_all = params.replace_all
         logger.info(f"Editing file: {file_path} (replace_all={replace_all})")
+
+        # Resolve to absolute path
+        if not Path(file_path).is_absolute():
+            file_path = str(Path(ctx.cwd) / file_path)
+
+        # Workspace check for standard and strict
+        if ctx.permission != Permission.FULL:
+            if is_outside_workspace(file_path, ctx.cwd):
+                logger.warning(f"Edit blocked outside workspace: {file_path}")
+                return ToolResult(
+                    content=(
+                        f"Cannot edit outside workspace: {file_path}\n"
+                        f"Current permission level is '{ctx.permission.value}'. "
+                        f"Set `tool.permission` to `\"full\"` in config.json to allow this."
+                    ),
+                    is_error=True,
+                )
 
         ctx.snapshot.backup(file_path)
 

@@ -6,6 +6,7 @@ import threading
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
+from flops.schemas import Permission
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
 # Builtins that enable arbitrary code execution or system escape — explicitly blocked
@@ -84,6 +85,18 @@ class PythonTool(Tool):
     async def execute(self, ctx: ToolContext, params: PythonParams) -> ToolResult:
         code = params.code
         timeout = params.timeout
+
+        # Strict mode: Python is disabled
+        if ctx.permission == Permission.STRICT:
+            logger.warning("Python blocked in strict mode")
+            return ToolResult(
+                content=(
+                    "Python is disabled in 'strict' permission mode. "
+                    "Set `tool.permission` to `\"standard\"` or `\"full\"` in config.json to enable Python execution."
+                ),
+                is_error=True,
+            )
+
         logger.info(f"Executing Python code (timeout={timeout}s)")
         logger.debug(f"Python code:\n{code}")
         result = {}

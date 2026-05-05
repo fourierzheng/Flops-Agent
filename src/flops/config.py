@@ -103,7 +103,7 @@ class SkillsConfig:
 
 @dataclass
 class ToolConfig:
-    permission: Permission = Permission.STANDARD
+    permission: Permission = Permission.FULL
 
     def __post_init__(self):
         if isinstance(self.permission, str):

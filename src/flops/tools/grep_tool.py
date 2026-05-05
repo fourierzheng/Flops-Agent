@@ -72,17 +72,7 @@ class GrepTool(Tool):
         files_only = params.files_only
         logger.info(f"Grep search: pattern='{pattern}', path={path or ctx.cwd}, glob={glob}")
         search_path = Path(path or ctx.cwd).resolve()
-
-        # Security: prevent escaping outside the workspace
         workspace = Path(ctx.cwd).resolve()
-        try:
-            search_path.relative_to(workspace)
-        except ValueError:
-            logger.warning(f"Search path '{search_path}' is outside workspace '{workspace}'")
-            return ToolResult(
-                content=f"Error: search path '{search_path}' is outside the workspace '{workspace}'",
-                is_error=True,
-            )
 
         if not search_path.exists():
             logger.error(f"Search path does not exist: {search_path}")

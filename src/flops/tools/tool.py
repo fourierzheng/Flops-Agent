@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 import re
 from typing import Any, Callable, AsyncGenerator
 
@@ -14,6 +15,17 @@ from flops.schemas import Permission, Skill, ToolResult, ToolUse
 from flops.snapshot import Snapshot
 
 
+def is_outside_workspace(file_path: str, cwd: str) -> bool:
+    """Check if a resolved path is outside the workspace directory."""
+    cwd_resolved = Path(cwd).resolve()
+    resolved = Path(file_path).resolve() if Path(file_path).is_absolute() else (cwd_resolved / file_path).resolve()
+    try:
+        resolved.relative_to(cwd_resolved)
+        return False
+    except ValueError:
+        return True
+
+
 @dataclass
 class ToolContext:
     """Execution context for tools."""
@@ -24,7 +36,7 @@ class ToolContext:
     memory: Memory
     llm: LLM
     stream_chat: Callable[..., AsyncGenerator]
-    permission: Permission = Permission.STANDARD
+    permission: Permission = Permission.FULL
 
 
 class Tool:
