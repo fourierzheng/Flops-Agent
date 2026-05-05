@@ -30,10 +30,10 @@
 
 ```bash
 # 方式1: 直接 curl 安装
-curl -fsSL https://raw.githubusercontent.com/linhaizhengdev/Flops-Agent/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fourierzheng/Flops-Agent/main/install.sh | bash
 
 # 方式2: 克隆后本地安装
-git clone https://github.com/linhaizhengdev/Flops-Agent.git
+git clone https://github.com/fourierzheng/Flops-Agent.git
 cd Flops-Agent
 bash install.sh
 ```
