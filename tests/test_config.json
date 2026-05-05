@@ -1,0 +1,22 @@
+{
+    "name": "flops",
+    "providers": {
+        "test-provider": {
+            "api_key": "sk-test",
+            "base_url": "https://api.test.com",
+            "models": {
+                "test-model": {
+                    "max_tokens": 4096,
+                    "context_size": 32768
+                }
+            }
+        }
+    },
+    "agent": {
+        "model": "test-provider:test-model",
+        "max_turns": 10
+    },
+    "log": {
+        "level": "INFO"
+    }
+}
