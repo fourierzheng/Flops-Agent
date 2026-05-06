@@ -1,10 +1,8 @@
-from pathlib import Path
-
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
-from flops.schemas import Permission
-from flops.tools.tool import ToolContext, Tool, ToolResult, tool, is_outside_workspace
+from flops.error import ToolError
+from flops.tools.tool import ToolContext, Tool, ToolResult, tool, resolve_path_in_workspace
 
 
 class FileEditParams(BaseModel):
@@ -30,43 +28,20 @@ class FileEditTool(Tool):
         replace_all = params.replace_all
         logger.info(f"Editing file: {file_path} (replace_all={replace_all})")
 
-        # Resolve to absolute path
-        if not Path(file_path).is_absolute():
-            file_path = str(Path(ctx.cwd) / file_path)
-
-        # Workspace check for standard and strict
-        if ctx.permission != Permission.FULL:
-            if is_outside_workspace(file_path, ctx.cwd):
-                logger.warning(f"Edit blocked outside workspace: {file_path}")
-                return ToolResult(
-                    content=(
-                        f"Cannot edit outside workspace: {file_path}\n"
-                        f"Current permission level is '{ctx.permission.value}'. "
-                        f"Set `tool.permission` to `\"full\"` in config.json to allow this."
-                    ),
-                    is_error=True,
-                )
-
+        file_path = resolve_path_in_workspace(ctx.cwd, file_path, ctx.permission, "edit")
         ctx.snapshot.backup(file_path)
 
         if old_str == "":
             logger.warning("Edit failed: old_str is empty")
-            return ToolResult(content="Error: old_str cannot be empty", is_error=True)
+            raise ToolError("Error: old_str cannot be empty")
 
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            logger.debug(f"File read successfully, size: {len(content)} bytes")
-        except FileNotFoundError:
-            logger.error(f"File not found: {file_path}")
-            return ToolResult(content=f"Error: file not found: {file_path}", is_error=True)
-        except Exception as e:
-            logger.exception(f"Error reading file {file_path}: {e}")
-            return ToolResult(content=f"Error reading file: {e}", is_error=True)
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        logger.debug(f"File read successfully, size: {len(content)} bytes")
 
         if old_str not in content:
             logger.warning(f"old_str not found in {file_path}")
-            return ToolResult(content=f"Error: old_str not found in {file_path}", is_error=True)
+            raise ToolError(f"Error: old_str not found in {file_path}")
 
         if replace_all:
             count = content.count(old_str)
@@ -76,18 +51,13 @@ class FileEditTool(Tool):
             count = content.count(old_str)
             if count > 1:
                 logger.warning(f"Multiple matches ({count}) found, use replace_all=True")
-                return ToolResult(
-                    content=f"Error: old_str appears {count} times in {file_path}, use replace_all=True to replace all occurrences",
-                    is_error=True,
+                raise ToolError(
+                    f"Error: old_str appears {count} times in {file_path}, use replace_all=True to replace all occurrences"
                 )
             new_content = content.replace(old_str, new_str, 1)
             logger.info(f"Replaced 1 occurrence in {file_path}")
 
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
-            logger.info(f"Successfully edited {file_path}")
-            return ToolResult(content=f"Content edited in {file_path}")
-        except Exception as e:
-            logger.exception(f"Error writing file {file_path}: {e}")
-            return ToolResult(content=f"Error writing file: {e}", is_error=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        logger.info(f"Successfully edited {file_path}")
+        return ToolResult(content=f"Content edited in {file_path}")

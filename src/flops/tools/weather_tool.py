@@ -65,10 +65,7 @@ class WeatherTool(Tool):
         return f"🌤️ Weather({tool_input.get('city', '<no city>')})"
 
     async def execute(self, ctx: ToolContext, params: WeatherParams) -> ToolResult:
-        try:
-            result = await get_weather(params.city)
-            return ToolResult(
-                content=f"{result.city} current temperature {result.temperature}°C, wind speed {result.windspeed} km/h, weather code {result.weathercode}"
-            )
-        except Exception as e:
-            return ToolResult(content=str(e), is_error=True)
+        result = await get_weather(params.city)
+        return ToolResult(
+            content=f"{result.city} current temperature {result.temperature}°C, wind speed {result.windspeed} km/h, weather code {result.weathercode}"
+        )

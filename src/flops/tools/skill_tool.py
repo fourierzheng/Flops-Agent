@@ -20,10 +20,6 @@ class SkillTool(Tool):
     async def execute(self, ctx: ToolContext, params: SkillParams) -> ToolResult:
         skill_name = params.skill_name
         logger.info(f"Loading skill: {skill_name}")
-        try:
-            skill = ctx.skills.get(skill_name)
-        except KeyError:
-            logger.warning(f"Skill not found: {skill_name}")
-            return ToolResult(f"Not found skill: {skill_name}", True)
+        skill = ctx.skills.get(skill_name)
         logger.info(f"Skill loaded: {skill_name} from {skill.path}")
         return ToolResult(skill.path.read_text(), False)

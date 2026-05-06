@@ -1,15 +1,11 @@
 import re
-from typing import TYPE_CHECKING
 
 from flops.const import MAX_TOKENS_RESERVE, COMPRESSION_THRESHOLD
 from flops.event import StopEvent, TextDeltaEvent
-
+from flops.llm import LLM
 from flops.logger import logger
 from flops.schemas import Message, TextBlock, ThinkingBlock, ToolResult, ToolUse
 from flops.session import Session
-
-if TYPE_CHECKING:
-    from flops.llm import LLM
 
 
 # Role name mapping for display

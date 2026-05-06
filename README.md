@@ -135,7 +135,7 @@ bash install.sh
         "distill_interval": 10
     },
     "tool": {
-        "permission": "full"
+        "permission": "standard"
     }
 }
 ```
@@ -144,7 +144,7 @@ bash install.sh
 |------|------|--------|------|
 | `memory.enabled` | bool | `true` | 是否启用长期记忆 |
 | `memory.distill_interval` | int | `10` | 每 N 轮对话自动蒸馏记忆一次 |
-| `tool.permission` | string | `"full"` | 工具权限级别：`"full"`（无限制）、`"standard"`（写/改/删 限 workspace）、`"strict"`（同 standard + 禁用 Shell/Python） |
+| `tool.permission` | string | `"standard"` | 工具权限级别：`"full"`（无限制）、`"standard"`（写/改/删 限 workspace）、`"strict"`（同 standard + 禁用 Shell/Python） |
 
 > 模型引用格式为 `"ProviderName:ModelName"`（如 `"DeepSeek:deepseek-v4-flash"`）。以上示例为敏感信息脱敏后的真实结构。
 

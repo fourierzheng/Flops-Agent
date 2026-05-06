@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from flops.const import CONFIG_DIR
 from flops.logger import logger
+from flops.error import ToolError
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
 
@@ -32,40 +31,32 @@ class GlobTool(Tool):
         show_hidden = params.show_hidden
 
         logger.info(f"Glob searching: path={path}, pattern={pattern}, show_hidden={show_hidden}")
-        try:
-            root = Path(path).expanduser().resolve()
-            if not root.exists():
-                logger.error(f"Path does not exist: {root}")
-                return ToolResult(content=f"Error: path does not exist: {root}", is_error=True)
-            if root.is_file():
-                logger.error(f"Path is a file, expected directory: {root}")
-                return ToolResult(
-                    content=f"Error: path must be a directory, not a file: {root}", is_error=True
-                )
+        root = Path(path).expanduser().resolve()
+        if not root.exists():
+            logger.error(f"Path does not exist: {root}")
+            raise ToolError(f"Error: path does not exist: {root}")
+        if root.is_file():
+            logger.error(f"Path is a file, expected directory: {root}")
+            raise ToolError(f"Error: path must be a directory, not a file: {root}")
 
-            # Block globbing of system paths
-            if str(root).startswith(str(CONFIG_DIR)):
-                return ToolResult(
-                    content=f"Error: access to this path is restricted", is_error=True
-                )
+        # Block globbing of system paths
+        if str(root).startswith(str(CONFIG_DIR)):
+            raise ToolError(f"Error: access to this path is restricted")
 
-            matches = []
-            for candidate in sorted(root.glob(pattern)):
-                if not show_hidden and any(
-                    part.startswith(".") for part in candidate.relative_to(root).parts
-                ):
-                    continue
-                # Filter out blocked system paths
-                if str(candidate.resolve()).startswith(str(CONFIG_DIR)):
-                    continue
-                matches.append(candidate.as_posix())
+        matches = []
+        for candidate in sorted(root.glob(pattern)):
+            if not show_hidden and any(
+                part.startswith(".") for part in candidate.relative_to(root).parts
+            ):
+                continue
+            # Filter out blocked system paths
+            if str(candidate.resolve()).startswith(str(CONFIG_DIR)):
+                continue
+            matches.append(candidate.as_posix())
 
-            if not matches:
-                logger.info("Glob search found no matches")
-                return ToolResult(content="No matches found.")
+        if not matches:
+            logger.info("Glob search found no matches")
+            return ToolResult(content="No matches found.")
 
-            logger.info(f"Glob search found {len(matches)} matches")
-            return ToolResult(content="\n".join(matches))
-        except Exception as e:
-            logger.exception(f"Error executing glob search: {e}")
-            return ToolResult(content=f"Error: {e}", is_error=True)
+        logger.info(f"Glob search found {len(matches)} matches")
+        return ToolResult(content="\n".join(matches))

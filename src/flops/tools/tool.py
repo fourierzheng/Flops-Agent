@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -7,23 +5,13 @@ from typing import Any, Callable, AsyncGenerator
 
 from pydantic import BaseModel
 
+from flops.error import ToolError, PermissionDenied
 from flops.llm import LLM
 from flops.logger import logger
 from flops.memory import Memory
 from flops.registry import Registry
 from flops.schemas import Permission, Skill, ToolResult, ToolUse
 from flops.snapshot import Snapshot
-
-
-def is_outside_workspace(file_path: str, cwd: str) -> bool:
-    """Check if a resolved path is outside the workspace directory."""
-    cwd_resolved = Path(cwd).resolve()
-    resolved = Path(file_path).resolve() if Path(file_path).is_absolute() else (cwd_resolved / file_path).resolve()
-    try:
-        resolved.relative_to(cwd_resolved)
-        return False
-    except ValueError:
-        return True
 
 
 @dataclass
@@ -37,6 +25,31 @@ class ToolContext:
     llm: LLM
     stream_chat: Callable[..., AsyncGenerator]
     permission: Permission = Permission.FULL
+
+
+def resolve_path_in_workspace(
+    cwd: str, file_path: str, permission: Permission, action: str = "access"
+) -> str:
+    """Resolve *file_path* relative to *cwd*, expand ``~``, and enforce workspace boundary.
+
+    Raises :class:`PermissionDenied` if the resolved path falls outside *cwd*
+    and *permission* is not ``FULL``.
+    """
+    p = Path(file_path)
+    if not p.is_absolute():
+        p = Path(cwd) / p
+    p = p.expanduser().resolve()
+
+    if permission != Permission.FULL:
+        cwd_path = Path(cwd).resolve()
+        if not p.is_relative_to(cwd_path):
+            raise PermissionDenied(
+                f"Cannot {action} outside workspace: {p}\n"
+                f"Current permission level is '{permission.value}'. "
+                f'Set `tool.permission` to `"full"` in config.json to allow this.'
+            )
+
+    return str(p)
 
 
 class Tool:
@@ -117,9 +130,12 @@ def render_tool(tool_use: ToolUse) -> str:
 async def dispatch_tool(ctx: ToolContext, tool_use: ToolUse) -> ToolResult:
     try:
         result = await _ToolManager.dispatch(ctx, tool_use)
+    except ToolError as e:
+        logger.warning(f"Tool {tool_use.name} error: {e}")
+        result = ToolResult(content=str(e), is_error=True)
     except Exception as e:
         logger.exception(f"Tool execution failed: {tool_use.name}")
-        result = ToolResult(content=str(e), is_error=True)
+        result = ToolResult(content=f"{type(e).__name__}: {e}", is_error=True)
     result.tool_use_id = tool_use.id  # Must set tool_use_id for LLM to track the tool call
     return result
 

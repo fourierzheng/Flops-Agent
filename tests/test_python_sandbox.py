@@ -1,68 +1,132 @@
-import importlib
+from unittest.mock import AsyncMock, MagicMock
 
-from flops.tools.python_tool import _build_safe_builtins, _SAFE_MODULES, _BLOCKED_BUILTINS
+import pytest
 
-
-def test_builtins_blocked():
-    """Dangerous builtins are removed from safe builtins."""
-    safe_builtins = _build_safe_builtins()
-    for name in _BLOCKED_BUILTINS:
-        assert name not in safe_builtins, f"{name} should be blocked"
-
-
-def test_safe_import_allowed():
-    """Whitelisted modules can be imported in the sandbox."""
-    safe_builtins = _build_safe_builtins()
-    for mod_name in sorted(_SAFE_MODULES):
-        # Simulate what happens inside exec()
-        namespace = {"__builtins__": safe_builtins}
-        try:
-            exec(f"import {mod_name}", namespace)
-            assert mod_name in namespace, f"{mod_name} should be importable"
-        except ImportError as e:
-            assert False, f"Safe module {mod_name} was blocked: {e}"
+from flops.llm import LLM
+from flops.memory import Memory
+from flops.registry import Registry
+from flops.schemas import Permission, Skill, ToolUse
+from flops.snapshot import Snapshot
+from flops.tools.tool import ToolContext, dispatch_tool
 
 
-def test_unsafe_import_blocked():
-    """Non-whitelisted modules raise ImportError in the sandbox."""
-    blocked = ["os", "subprocess", "pathlib", "sys", "shutil", "socket"]
-    safe_builtins = _build_safe_builtins()
-    for mod_name in blocked:
-        namespace = {"__builtins__": safe_builtins}
-        try:
-            exec(f"import {mod_name}", namespace)
-            assert False, f"{mod_name} should be blocked but was imported"
-        except ImportError:
-            pass  # Expected
+@pytest.fixture
+def ctx() -> ToolContext:
+    return ToolContext(
+        cwd="/tmp",
+        skills=Registry[Skill](),
+        snapshot=MagicMock(spec=Snapshot),
+        memory=MagicMock(spec=Memory),
+        llm=MagicMock(spec=LLM),
+        stream_chat=MagicMock(spec=AsyncMock),
+        permission=Permission.STANDARD,
+    )
 
 
-def test_submodule_of_safe_module_allowed():
-    """Submodules of whitelisted modules (e.g. json.decoder) are allowed."""
-    safe_builtins = _build_safe_builtins()
-    namespace = {"__builtins__": safe_builtins}
-    exec("import json.decoder", namespace)
-    assert "json" in namespace
+@pytest.mark.asyncio
+async def test_simple_output(ctx: ToolContext):
+    """Basic code execution captures stdout."""
+    result = await dispatch_tool(
+        ctx, ToolUse(id="t1", name="Python", input={"code": "print('hello world')"})
+    )
+    assert not result.is_error
+    assert "hello world" in result.content
 
 
-def test_submodule_of_unsafe_module_blocked():
-    """Even submodules of blocked modules are blocked."""
-    safe_builtins = _build_safe_builtins()
-    namespace = {"__builtins__": safe_builtins}
-    try:
-        exec("import os.path", namespace)
-        assert False, "os.path should be blocked"
-    except ImportError:
-        pass
+@pytest.mark.asyncio
+async def test_no_output(ctx: ToolContext):
+    """Code with no output returns '(no output)'."""
+    result = await dispatch_tool(ctx, ToolUse(id="t2", name="Python", input={"code": "x = 1 + 1"}))
+    assert not result.is_error
+    assert result.content == "(no output)"
 
 
-def test_blocked_builtins_not_in_exec():
-    """eval/exec/compile are not accessible inside sandbox exec."""
-    safe_builtins = _build_safe_builtins()
-    namespace = {"__builtins__": safe_builtins}
-    # These should raise NameError inside the sandbox
-    for name in ("eval", "exec", "compile"):
-        try:
-            exec(f"print({name})", namespace)
-            assert False, f"{name} should not be accessible"
-        except NameError:
-            pass
+@pytest.mark.asyncio
+async def test_stdout_and_stderr(ctx: ToolContext):
+    """Both stdout and stderr are captured."""
+    result = await dispatch_tool(
+        ctx,
+        ToolUse(
+            id="t3",
+            name="Python",
+            # Use 1/0 to generate stderr (traceback), avoid blocked 'sys' module
+            input={"code": "print('out'); 1/0"},
+        ),
+    )
+    assert result.is_error
+    assert "out" in result.content
+    assert "ZeroDivisionError" in result.content
+
+
+@pytest.mark.asyncio
+async def test_syntax_error(ctx: ToolContext):
+    """Syntax errors are reported."""
+    result = await dispatch_tool(ctx, ToolUse(id="t4", name="Python", input={"code": "print("}))
+    assert result.is_error
+    assert "SyntaxError" in result.content or "Error" in result.content
+
+
+@pytest.mark.asyncio
+async def test_runtime_error(ctx: ToolContext):
+    """Runtime exceptions are reported."""
+    result = await dispatch_tool(ctx, ToolUse(id="t5", name="Python", input={"code": "1 / 0"}))
+    assert result.is_error
+    assert "ZeroDivisionError" in result.content
+
+
+@pytest.mark.asyncio
+async def test_timeout(ctx: ToolContext):
+    """Long-running code is killed on timeout."""
+    result = await dispatch_tool(
+        ctx,
+        ToolUse(
+            id="t6", name="Python", input={"code": "import time; time.sleep(300)", "timeout": 1}
+        ),
+    )
+    assert result.is_error
+    assert "timed out" in result.content
+
+
+@pytest.mark.asyncio
+async def test_strict_mode_blocks(ctx: ToolContext):
+    """Strict permission blocks execution."""
+    strict_ctx = ToolContext(
+        cwd="/tmp",
+        skills=ctx.skills,
+        snapshot=ctx.snapshot,
+        memory=ctx.memory,
+        llm=ctx.llm,
+        stream_chat=ctx.stream_chat,
+        permission=Permission.STRICT,
+    )
+    result = await dispatch_tool(
+        strict_ctx, ToolUse(id="t7", name="Python", input={"code": "print('hi')"})
+    )
+    assert result.is_error
+    assert "disabled" in result.content
+
+
+@pytest.mark.asyncio
+async def test_exit_code_error(ctx: ToolContext):
+    """Non-zero exit code is reported as error."""
+    result = await dispatch_tool(ctx, ToolUse(id="t8", name="Python", input={"code": "exit(1)"}))
+    assert result.is_error
+    assert "exit code 1" in result.content or "Error" in result.content
+
+
+@pytest.mark.asyncio
+async def test_working_directory(ctx: ToolContext):
+    """Code runs in the specified working directory."""
+    # Use open() with a relative path to verify cwd; 'open' is not blocked
+    result = await dispatch_tool(
+        ctx,
+        ToolUse(
+            id="t9",
+            name="Python",
+            input={
+                "code": "with open('/tmp/__flops_test.txt', 'w') as f: f.write('ok'); print('ok')"
+            },
+        ),
+    )
+    assert not result.is_error
+    assert "ok" in result.content

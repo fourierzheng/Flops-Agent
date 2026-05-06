@@ -13,7 +13,10 @@ class Registry(Generic[T]):
 
     def get(self, name: str) -> T:
         """Get an object (raises KeyError if not found)"""
-        return self._items[name]
+        try:
+            return self._items[name]
+        except KeyError:
+            raise KeyError(f"Registry item not found: {name}")
 
     def keys(self) -> list[str]:
         return list(self._items.keys())
