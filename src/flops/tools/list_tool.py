@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from flops.const import CONFIG_DIR
 from flops.logger import logger
+from flops.error import ToolError
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
 
@@ -32,43 +33,34 @@ class ListTool(Tool):
         path = params.path
         show_hidden = params.show_hidden
         logger.info(f"Listing directory: {path} (show_hidden={show_hidden})")
-        try:
-            abs_path = os.path.abspath(os.path.expanduser(path))
+        abs_path = os.path.abspath(os.path.expanduser(path))
 
-            # Block listing of system paths
-            if str(abs_path).startswith(str(CONFIG_DIR)):
-                return ToolResult(
-                    content=f"Error: access to this path is restricted", is_error=True
-                )
+        # Block listing of system paths
+        if str(abs_path).startswith(str(CONFIG_DIR)):
+            raise ToolError(f"Error: access to this path is restricted")
 
-            entries = os.listdir(abs_path)
+        entries = os.listdir(abs_path)
 
-            if not show_hidden:
-                entries = [e for e in entries if not e.startswith(".")]
+        if not show_hidden:
+            entries = [e for e in entries if not e.startswith(".")]
 
-            entries.sort()
-            result = []
-            for entry in entries:
-                full_path = os.path.abspath(os.path.join(abs_path, entry))
-                # Filter out blocked system paths
-                if str(full_path).startswith(str(CONFIG_DIR)):
-                    continue
-                if os.path.isdir(full_path):
-                    result.append(f"{entry}/")
-                elif os.path.islink(full_path):
-                    result.append(f"{entry}@")
-                else:
-                    try:
-                        size = os.path.getsize(full_path)
-                        result.append(f"{entry} ({size}b)")
-                    except FileNotFoundError:
-                        result.append(f"{entry}!")
+        entries.sort()
+        result = []
+        for entry in entries:
+            full_path = os.path.abspath(os.path.join(abs_path, entry))
+            # Filter out blocked system paths
+            if str(full_path).startswith(str(CONFIG_DIR)):
+                continue
+            if os.path.isdir(full_path):
+                result.append(f"{entry}/")
+            elif os.path.islink(full_path):
+                result.append(f"{entry}@")
+            else:
+                try:
+                    size = os.path.getsize(full_path)
+                    result.append(f"{entry} ({size}b)")
+                except FileNotFoundError:
+                    result.append(f"{entry}!")
 
-            logger.debug(f"Listed {len(result)} entries in {path}")
-            return ToolResult(content="\n".join(result) if result else "(empty directory)")
-        except FileNotFoundError:
-            logger.error(f"Directory not found: {path}")
-            return ToolResult(content=f"Error: directory not found: {path}", is_error=True)
-        except Exception as e:
-            logger.exception(f"Error listing directory {path}: {e}")
-            return ToolResult(content=f"Error listing directory: {e}", is_error=True)
+        logger.debug(f"Listed {len(result)} entries in {path}")
+        return ToolResult(content="\n".join(result) if result else "(empty directory)")

@@ -5,6 +5,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
+from flops.error import ToolError
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
 UNTRUSTED_BANNER = (
@@ -74,68 +75,47 @@ class WebTool(Tool):
         # Block file:// protocol to prevent local file reading
         if url.startswith("file://"):
             logger.warning(f"Blocked file:// URL: {url}")
-            return ToolResult(
-                content="Error: file:// URLs are not allowed for security reasons.",
-                is_error=True,
-            )
+            raise ToolError("Error: file:// URLs are not allowed for security reasons.")
 
         logger.info(f"Fetching URL: {url} (max_length={max_length})")
-        try:
-            headers = {"User-Agent": "Mozilla/5.0 (compatible; flops-bot/0.1)"}
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=headers, timeout=30, follow_redirects=True)
-                content_type = response.headers.get("Content-Type", "")
-                logger.debug(
-                    f"Response status: {response.status_code}, Content-Type: {content_type}"
-                )
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; flops-bot/0.1)"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=30, follow_redirects=True)
+        content_type = response.headers.get("Content-Type", "")
+        logger.debug(f"Response status: {response.status_code}, Content-Type: {content_type}")
 
-                # Fallback to utf-8 when no charset is specified
-                if "charset" not in content_type.lower():
-                    response.encoding = "utf-8"
+        # Fallback to utf-8 when no charset is specified
+        if "charset" not in content_type.lower():
+            response.encoding = "utf-8"
 
-                if not response.is_success:
-                    logger.warning(f"HTTP error: {response.status_code}")
-                    return ToolResult(
-                        content=(
-                            f"URL: {response.url}\n"
-                            f"Status: {response.status_code}\n"
-                            f"Content-Type: {content_type or '(unknown)'}\n\n"
-                            f"Error: HTTP {response.status_code}"
-                        ),
-                        is_error=True,
-                    )
+        if not response.is_success:
+            logger.warning(f"HTTP error: {response.status_code}")
+            raise ToolError(
+                f"URL: {response.url}\n"
+                f"Status: {response.status_code}\n"
+                f"Content-Type: {content_type or '(unknown)'}\n\n"
+                f"Error: HTTP {response.status_code}"
+            )
 
-                if "text/html" in content_type:
-                    body = _extract_text_from_html(response.text)
-                elif content_type.startswith("text/") or "application/json" in content_type:
-                    body = response.text
-                else:
-                    body = f"[Binary or non-text content type: {content_type}]"
+        if "text/html" in content_type:
+            body = _extract_text_from_html(response.text)
+        elif content_type.startswith("text/") or "application/json" in content_type:
+            body = response.text
+        else:
+            body = f"[Binary or non-text content type: {content_type}]"
 
-                original_length = len(body)
-                if len(body) > max_length:
-                    body = (
-                        body[:max_length]
-                        + f"\n\n... [Content truncated, total length: {len(body)}]"
-                    )
-                    logger.debug(f"Content truncated: {original_length} -> {max_length} characters")
+        original_length = len(body)
+        if len(body) > max_length:
+            body = body[:max_length] + f"\n\n... [Content truncated, total length: {len(body)}]"
+            logger.debug(f"Content truncated: {original_length} -> {max_length} characters")
 
-                logger.info(f"Successfully fetched {original_length} characters from {url}")
-                return ToolResult(
-                    content=(
-                        f"URL: {response.url}\n"
-                        f"Status: {response.status_code}\n"
-                        f"Content-Type: {content_type or '(unknown)'}\n\n"
-                        f"{UNTRUSTED_BANNER}\n\n"
-                        f"{body}"
-                    )
-                )
-        except httpx.TimeoutException:
-            logger.error(f"Request timed out for URL: {url}")
-            return ToolResult(content="Error: Request timed out after 30 seconds", is_error=True)
-        except httpx.HTTPError as e:
-            logger.exception(f"Network request failed for URL: {url}")
-            return ToolResult(content=f"Error: Network request failed - {e}", is_error=True)
-        except Exception as e:
-            logger.exception(f"Unexpected error fetching URL: {url}")
-            return ToolResult(content=f"Error: {e}", is_error=True)
+        logger.info(f"Successfully fetched {original_length} characters from {url}")
+        return ToolResult(
+            content=(
+                f"URL: {response.url}\n"
+                f"Status: {response.status_code}\n"
+                f"Content-Type: {content_type or '(unknown)'}\n\n"
+                f"{UNTRUSTED_BANNER}\n\n"
+                f"{body}"
+            )
+        )

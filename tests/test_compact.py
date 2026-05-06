@@ -13,7 +13,7 @@ class MockLLM:
         self.summary_text = summary_text
         self.context_size = context_size
 
-    async def stream(self, ctx, messages):
+    async def stream(self, ctx, tools=None, messages=None):
         yield TextDeltaEvent(TextBlock(f"<summary>{self.summary_text}</summary>"))
         yield StopEvent(reason="end_turn")
 

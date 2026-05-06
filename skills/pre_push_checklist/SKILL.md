@@ -1,120 +1,173 @@
 ---
 name: pre_push_checklist
-description: 提交前格式化、编译检查、review、提交推送标准流程
+description: 提交前格式化、编译检查、review、提交推送标准流程。每一步必须严格执行，发现问题不得跳过，必须向用户报告并等待决策。
 ---
 
 # 代码提交工作流
 
-修改完代码后，按以下步骤完成格式化、检查、提交和推送。
+**核心原则：** 每一步都必须严格执行，发现问题不得擅自忽略、跳过或绕过。无法决定的事项必须向用户确认，得到明确指令后再继续。**严禁未经用户确认直接提交或推送。**
+
+---
 
 ## 步骤
 
 ### 1. 检查当前状态
 
 ```bash
-git status          # 看当前工作区状态，确认改了什么文件
-git diff            # 看具体改动，确保没改到无关内容
+git status          # 查看工作区状态，确认改了什么文件
+git diff            # 逐行审查改动，确保没有改到无关内容
+git diff --stat     # 概览改动的文件范围
 ```
+
+**必须确认：**
+- 改动的文件是否都在预期范围内
+- 是否有未预期的文件被修改
+- 如果有无关文件被改动，需向用户说明并确认是否包含在本次提交中
 
 ### 2. 格式化
 
-根据项目语言选择格式化工具。
+使用**项目对应的格式化工具**对所有改动过的源文件执行格式化。
 
-| 语言 | 工具 |
-|------|------|
-| Python | `black src/ tests/` |
-| C/C++ | `clang-format -i src/**/*.cpp src/**/*.h` |
-| Go | `gofmt -w .` |
-| Rust | `cargo fmt` |
-| JavaScript/TypeScript | `npx prettier --write .` |
-| Java | `mvn spotless:apply` |
+首次使用时，先确认项目使用什么格式化工具（如 black / ruff / clang-format / gofmt / cargo fmt / prettier 等），然后执行对应的格式化命令。后续按同一命令执行即可。
 
-### 3. 编译检查
+**必须确认：**
+- 格式化后文件语法仍然正确
+- 格式化未引入意外变更（可用 `git diff` 检查）
 
-根据项目语言验证无语法错误：
+### 3. 编译/语法检查
 
-```bash
-# Python
-.venv/bin/python -m py_compile src/xxx.py
+根据项目语言对所有修改过的源文件做编译或语法检查。
 
-# C/C++
-make 或 cmake --build build
+**常见命令参考（按需选用，不限于这些）：**
 
-# Rust
-cargo check
+| 语言 | 检查方式 |
+|------|----------|
+| Python | `python -m py_compile src/xxx.py`（python 路径按项目环境调整：系统 python / `.venv/bin/python` / `uv run python` / `poetry run python` 等） |
+| C/C++ | `make` 或 `cmake --build build` |
+| Rust | `cargo check` |
+| Go | `go build ./...` |
+| TypeScript | `npx tsc --noEmit` |
 
-# Go
-go build ./...
-
-# TypeScript
-npx tsc --noEmit
-```
+**如果编译/语法检查失败，必须停止，向用户报告具体错误，等待修复指示，不得跳过。**
 
 ### 4. 逻辑验证
 
-跑关键路径冒烟测试（如有），例如：
+对本次改动的核心逻辑做针对性验证。例如：
 
-- 配置文件解析
-- 新增核心函数 import 并返回预期结果
-- 权限/校验逻辑是否正确
+- 新增/修改的配置项是否按预期工作
+- 权限/校验逻辑是否正确（可写小段测试脚本运行验证）
+- 关键路径的 import/调用是否正常
+
+**如果验证发现预期不符，必须向用户报告，不得自行修改后跳过。**
 
 ### 5. 跑测试
 
-```bash
-# Python
-.venv/bin/python -m pytest tests/ -x -q
+使用**项目对应的测试命令**执行完整测试套件。
 
-# C++
-ctest --test-dir build
+**常见命令参考（按需选用，不限于这些）：**
 
-# Rust
-cargo test
+| 语言 | 测试命令 |
+|------|----------|
+| Python | `python -m pytest tests/ -x -q`（python 路径按项目环境调整） |
+| C++ | `ctest --test-dir build` |
+| Rust | `cargo test` |
+| Go | `go test ./...` |
+| JavaScript | `npm test` |
 
-# Go
-go test ./...
-
-# JavaScript
-npm test
-```
+**必须遵守的规则：**
+- **必须跑完整测试套件**，不能只跑部分测试
+- **有失败测试必须逐一向用户报告**，说明：
+  - 失败原因
+  - 是否与本次改动相关
+  - 如果是预存问题，也必须修复或者向用户确认后再决定
+- **不得擅自将失败测试归类为"无关"而跳过**
+- 只有所有测试通过后，才能进入下一步
 
 ### 6. Review diff
 
 ```bash
-git diff
+git diff            # staged 和 unstaged 的完整 diff
+git diff --cached   # 如果已 stage，看 staged 的 diff
 ```
 
 逐行检查，关注：
 
-- 死代码（永远走不到的分支/校验）
-- 忘加的 import/include
-- 语义/行为改变是否符合预期
-- 错误信息是否对用户友好
+- **死代码**（永远走不到的分支/校验）
+- **忘加的 import/依赖**
+- **语义/行为改变是否符合预期**
+- **错误信息是否对用户友好**
+- **是否有调试代码、print、TODO 残留**
+- **是否有敏感信息泄露（路径、密钥等）**
+
+**发现问题必须向用户指出，等待决策。**
 
 ### 7. 检查文档
 
-新增配置项、接口或字段时，同步更新相关文档。
+新增配置项、接口、命令或字段时，必须同步更新相关文档。如不确定是否需要更新文档，向用户确认。
 
-### 8. Stage + 二次确认
+### 8. 确认分支策略
+
+**在 stage 之前，必须先向用户确认：**
+- 提交到哪个分支？
+- 如果是新分支，分支名是什么？
+- 是直接推送到远端，还是先本地提交？
+
+**未收到明确回答，不得进行下一步。**
+
+### 9. Stage + 二次确认
 
 ```bash
 git add -A
-git status          # 确认没有意外文件（.swp、__pycache__、*.o 等）
+git status          # 确认没有意外文件（.swp、__pycache__、*.o、.DS_Store 等）
 ```
 
-### 9. 提交
+**二次确认内容：**
+- 暂存的文件列表是否与预期一致
+- 是否有构建产物、临时文件、虚拟环境文件被误加入
+- 如果有疑问，向用户确认
+
+### 10. 提交
 
 ```bash
 git commit -m "type: description"
 ```
 
-### 10. 确认 commits
+**前置条件：** 所有测试通过、所有问题已处理或已得到用户明确指示。
+
+**提交前必须向用户展示 commit message 草稿并确认。** 格式参考：
+
+```
+type(scope): description
+
+- 具体变更 1
+- 具体变更 2
+```
+
+type: `feat` / `fix` / `refactor` / `chore` / `docs` / `test`
+
+### 11. 确认 commits
 
 ```bash
 git log --oneline -3   # 确认 commit 数量和 message 正确
 ```
 
-### 11. 推送
+### 12. 推送
 
 ```bash
 git push
 ```
+
+**前置条件：** 用户已确认分支名和 commit message，所有检查已通过。
+
+---
+
+## 红线（绝对不能做的事）
+
+| 行为 | 说明 |
+|------|------|
+| ❌ 擅自跳过失败的测试 | 测试失败必须报告，处理后才可继续 |
+| ❌ 擅自绕过编译/语法错误 | 语法错误必须修复 |
+| ❌ 未经用户确认直接提交 | commit message 必须经用户确认 |
+| ❌ 未经用户确认直接推送 | 分支名必须经用户确认 |
+| ❌ 擅自将问题归类为"无关" | 即使认为是预存问题，也必须向用户说明 |
+| ❌ 提交时混入无关改动 | 未经确认的修改不应混入提交 |

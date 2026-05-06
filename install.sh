@@ -8,7 +8,7 @@ set -e
 
 echo "==> Flops Agent 安装脚本"
 
-REQUIRED_PYTHON="3.14"
+REQUIRED_PYTHON="3.13"
 
 # 检查或安装 uv
 if command -v uv &> /dev/null; then

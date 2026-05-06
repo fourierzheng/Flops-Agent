@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 import re
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
+from flops.error import ToolError
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
 
@@ -76,19 +75,9 @@ class GrepTool(Tool):
 
         if not search_path.exists():
             logger.error(f"Search path does not exist: {search_path}")
-            return ToolResult(
-                content=f"Error: path does not exist: {search_path}",
-                is_error=True,
-            )
+            raise ToolError(f"Error: path does not exist: {search_path}")
 
-        try:
-            compiled = re.compile(pattern)
-        except re.error as e:
-            logger.warning(f"Invalid regex pattern: {e}")
-            return ToolResult(
-                content=f"Error: invalid regex pattern: {e}",
-                is_error=True,
-            )
+        compiled = re.compile(pattern)
 
         # Single file mode: search only that file
         if search_path.is_file():

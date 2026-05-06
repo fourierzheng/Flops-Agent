@@ -3,8 +3,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
-from flops.schemas import Permission
-from flops.tools.tool import ToolContext, Tool, ToolResult, tool, is_outside_workspace
+from flops.error import ToolError
+from flops.tools.tool import ToolContext, Tool, ToolResult, tool, resolve_path_in_workspace
 
 
 class RmParams(BaseModel):
@@ -26,22 +26,7 @@ class RmTool(Tool):
         file_path = params.file_path
         recursive = params.recursive
 
-        # Resolve to absolute path
-        if not Path(file_path).is_absolute():
-            file_path = str(Path(ctx.cwd) / file_path)
-
-        # Workspace check for standard and strict
-        if ctx.permission != Permission.FULL:
-            if is_outside_workspace(file_path, ctx.cwd):
-                logger.warning(f"Attempted to delete path outside workspace: {file_path}")
-                return ToolResult(
-                    content=(
-                        f"Cannot delete path outside workspace: {file_path}\n"
-                        f"Current permission level is '{ctx.permission.value}'. "
-                        f"Set `tool.permission` to `\"full\"` in config.json to allow this."
-                    ),
-                    is_error=True,
-                )
+        file_path = resolve_path_in_workspace(ctx.cwd, file_path, ctx.permission, "delete")
 
         path = Path(file_path)
 
@@ -49,27 +34,21 @@ class RmTool(Tool):
 
         # Check existence
         if not path.exists():
-            return ToolResult(content=f"Path does not exist: {file_path}", is_error=True)
+            raise ToolError(f"Path does not exist: {file_path}")
 
-        # Try to delete
-        try:
-            if path.is_file() or path.is_symlink():
-                path.unlink()
-                logger.info(f"Deleted file: {file_path}")
-                return ToolResult(content=f"Deleted file: {file_path}")
-            elif path.is_dir():
-                if not recursive:
-                    # Check if directory is empty
-                    if any(path.iterdir()):
-                        return ToolResult(
-                            content=f"Directory not empty: {file_path}. Use recursive=True to delete.",
-                            is_error=True,
-                        )
-                path.rmdir() if not recursive else __import__("shutil").rmtree(path)
-                logger.info(f"Deleted directory: {file_path}")
-                return ToolResult(content=f"Deleted directory: {file_path}")
-            else:
-                return ToolResult(content=f"Unknown path type: {file_path}", is_error=True)
-        except OSError as e:
-            logger.exception(f"Error deleting {file_path}: {e}")
-            return ToolResult(content=f"Error deleting {file_path}: {e}", is_error=True)
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+            logger.info(f"Deleted file: {file_path}")
+            return ToolResult(content=f"Deleted file: {file_path}")
+        elif path.is_dir():
+            if not recursive:
+                # Check if directory is empty
+                if any(path.iterdir()):
+                    raise ToolError(
+                        f"Directory not empty: {file_path}. Use recursive=True to delete."
+                    )
+            path.rmdir() if not recursive else __import__("shutil").rmtree(path)
+            logger.info(f"Deleted directory: {file_path}")
+            return ToolResult(content=f"Deleted directory: {file_path}")
+        else:
+            raise ToolError(f"Unknown path type: {file_path}")

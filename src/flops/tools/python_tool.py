@@ -1,10 +1,11 @@
-import builtins as _builtins_mod
-import contextlib
-import io
-import threading
+import asyncio
+import os
+import sys
+import tempfile
 
 from pydantic import BaseModel, Field
 
+from flops.error import ToolError, PermissionDenied
 from flops.logger import logger
 from flops.schemas import Permission
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
@@ -47,23 +48,31 @@ _SAFE_MODULES = {
 }
 
 
-def _safe_import(name: str, *args, **kwargs):
-    """Custom __import__ that only allows whitelisted modules."""
-    top_level = name.split(".", maxsplit=1)[0]
-    if top_level not in _SAFE_MODULES:
+def _build_sandbox_code(user_code: str) -> str:
+    """Wrap user code in a sandbox that restricts builtins and module imports."""
+    blocked_repr = repr(sorted(_BLOCKED_BUILTINS))
+    safe_repr = repr(sorted(_SAFE_MODULES))
+    code_repr = repr(user_code)
+    return f"""\
+import builtins as _b
+_BLOCKED = set({blocked_repr})
+_SAFE = set({safe_repr})
+
+def _safe_import(name, *args, **kwargs):
+    top = name.split(".", 1)[0]
+    if top not in _SAFE:
         raise ImportError(
-            f"Module '{name}' is not allowed for security reasons. "
-            f"Allowed modules: {', '.join(sorted(_SAFE_MODULES))}"
+            f"Module '{{name}}' is not allowed for security reasons. "
+            f"Allowed modules: {{', '.join(sorted(_SAFE))}}"
         )
-    return _builtins_mod.__import__(name, *args, **kwargs)
+    return _b.__import__(name, *args, **kwargs)
 
+_safe_builtins = {{k: v for k, v in _b.__dict__.items() if k not in _BLOCKED}}
+_safe_builtins["__import__"] = _safe_import
 
-def _build_safe_builtins() -> dict:
-    """Build a restricted builtins dict with a whitelisted __import__."""
-    builtins = __builtins__ if isinstance(__builtins__, dict) else __builtins__.__dict__
-    safe = {k: v for k, v in builtins.items() if k not in _BLOCKED_BUILTINS}
-    safe["__import__"] = _safe_import
-    return safe
+_exec_globals = {{"__builtins__": _safe_builtins, "__name__": "__main__"}}
+exec({code_repr}, _exec_globals)
+"""
 
 
 class PythonParams(BaseModel):
@@ -89,61 +98,59 @@ class PythonTool(Tool):
         # Strict mode: Python is disabled
         if ctx.permission == Permission.STRICT:
             logger.warning("Python blocked in strict mode")
-            return ToolResult(
-                content=(
-                    "Python is disabled in 'strict' permission mode. "
-                    "Set `tool.permission` to `\"standard\"` or `\"full\"` in config.json to enable Python execution."
-                ),
-                is_error=True,
+            raise PermissionDenied(
+                "Python is disabled in 'strict' permission mode. "
+                'Set `tool.permission` to `"standard"` or `"full"` in config.json to enable Python execution.'
             )
 
         logger.info(f"Executing Python code (timeout={timeout}s)")
         logger.debug(f"Python code:\n{code}")
-        result = {}
-        exception_occurred = {}
 
-        def run_code():
-            try:
-                output = io.StringIO()
-                errors = io.StringIO()
-                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-                    namespace = {
-                        "__name__": "__main__",
-                        "cwd": ctx.cwd,
-                        "__builtins__": _build_safe_builtins(),
-                    }
-                    exec(code, namespace)
-                result["output"] = output.getvalue()
-                result["errors"] = errors.getvalue()
-            except Exception as e:
-                exception_occurred["exc"] = e
+        # Wrap user code in sandbox that restricts builtins and imports
+        safe_code = _build_sandbox_code(code)
 
+        # Write sandbox-wrapped code to a temp file
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False)
         try:
-            thread = threading.Thread(target=run_code)
-            thread.start()
-            thread.join(timeout=timeout)
+            tmp.write(safe_code)
+            tmp.close()
 
-            if thread.is_alive():
-                logger.warning(f"Python execution timed out after {timeout} seconds")
-                return ToolResult(
-                    content=f"Error: Execution timed out after {timeout} seconds", is_error=True
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                tmp.name,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=ctx.cwd,
+            )
+
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
                 )
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                logger.warning(f"Python execution timed out after {timeout}s")
+                proc.kill()
+                await proc.wait()
+                raise ToolError(f"Error: Execution timed out after {timeout} seconds")
 
-            if exception_occurred:
-                e = exception_occurred["exc"]
-                logger.warning(f"Python execution error: {type(e).__name__}: {e}")
-                if isinstance(e, SyntaxError):
-                    return ToolResult(content=f"Syntax Error: {e}", is_error=True)
-                return ToolResult(content=f"Error: {type(e).__name__}: {e}", is_error=True)
+            stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
+            stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+
+            if proc.returncode != 0:
+                logger.warning(f"Python exited with code {proc.returncode}")
+                # stderr usually contains the traceback
+                raise ToolError(stderr or f"Error: exit code {proc.returncode}")
 
             logger.info("Python code executed successfully")
             result_parts = []
-            if result.get("output"):
-                result_parts.append(result["output"])
-            if result.get("errors"):
-                result_parts.append(f"Stderr: {result['errors']}")
-
+            if stdout:
+                result_parts.append(stdout)
+            if stderr:
+                result_parts.append(f"Stderr: {stderr}")
             return ToolResult(content="".join(result_parts) if result_parts else "(no output)")
-        except Exception as e:
-            logger.exception(f"Unexpected error executing Python code: {e}")
-            return ToolResult(content=f"Error: {type(e).__name__}: {e}", is_error=True)
+
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass

@@ -15,9 +15,9 @@ class StopReason(Enum):
 
 
 class Permission(StrEnum):
-    FULL = "full"          # 全放开，无限制
+    FULL = "full"  # 全放开，无限制
     STANDARD = "standard"  # 写/改/删限 workspace，读取不限
-    STRICT = "strict"      # 写/改/删限 workspace + 禁用 Shell/Python
+    STRICT = "strict"  # 写/改/删限 workspace + 禁用 Shell/Python
 
 
 @dataclass

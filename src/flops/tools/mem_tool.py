@@ -18,19 +18,15 @@ class MemTool(Tool):
     params_model = MemParams
 
     async def execute(self, ctx: ToolContext, params: MemParams) -> ToolResult:
-        try:
-            results = ctx.memory.query(domain=params.domain, key=params.key, search=params.search)
-            if not results:
-                return ToolResult(
-                    content="No matching facts found in memory. Facts are accumulated over time through automatic distillation."
-                )
+        results = ctx.memory.query(domain=params.domain, key=params.key, search=params.search)
+        if not results:
+            return ToolResult(
+                content="No matching facts found in memory. Facts are accumulated over time through automatic distillation."
+            )
 
-            lines = ["Matching facts:"]
-            for r in results:
-                lines.append(
-                    f"  [{r['domain']}] {r['key']} = {r['value']} "
-                    f"(confidence: {r['confidence']}/5)"
-                )
-            return ToolResult(content="\n".join(lines))
-        except Exception as e:
-            return ToolResult(content=f"Error querying memory: {e}", is_error=True)
+        lines = ["Matching facts:"]
+        for r in results:
+            lines.append(
+                f"  [{r['domain']}] {r['key']} = {r['value']} " f"(confidence: {r['confidence']}/5)"
+            )
+        return ToolResult(content="\n".join(lines))

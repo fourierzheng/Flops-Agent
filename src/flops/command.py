@@ -1,20 +1,18 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, AsyncGenerator
+from typing import AsyncGenerator
 
 from flops.agent import Agent, AgentContext
 from flops.compact import Compactor
 from flops.event import ChatEvent, ExitEvent, LineEvent, TextDeltaEvent
 from flops.llm import LLM
 from flops.logger import logger
+from flops.memory import Memory
 from flops.registry import Registry
 from flops.schemas import Permission, Skill
 from flops.session import Conversation, Session
 from flops.snapshot import Snapshot
 from flops.state import State
-
-if TYPE_CHECKING:
-    from flops.memory import Memory
 
 
 @dataclass
@@ -28,7 +26,7 @@ class CommandContext:
     agent: Agent
     compactor: Compactor
     snapshot: Snapshot
-    memory: "Memory"
+    memory: Memory
     skills: Registry["Skill"] = field(default_factory=Registry)
     permission: Permission = Permission.FULL
 

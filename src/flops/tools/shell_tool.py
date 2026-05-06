@@ -1,14 +1,14 @@
-from __future__ import annotations
-
 import asyncio
 import os
 import re
+from pathlib import Path
 
 import bashlex
 from pydantic import BaseModel, Field
 
 from flops.logger import logger
 from flops.schemas import Permission
+from flops.error import ToolError, PermissionDenied
 from flops.tools.tool import ToolContext, Tool, ToolResult, tool
 
 
@@ -113,6 +113,12 @@ STRING_PATTERNS = [
     # Port forwarding abuse
     r"ssh\s+-[LRD]\s+\d+:\d+:\d+",
 ]
+
+# Interpreters blocked in shell under STANDARD mode (use the dedicated tool instead)
+BLOCKED_INTERPRETERS = {
+    "python",
+    "python3",
+}
 
 
 def _get_command_name(node) -> str | None:
@@ -220,6 +226,95 @@ def _check_node_dangerous_args(node) -> tuple[bool, str]:
     return True, ""
 
 
+def _check_cd_workspace(command: str, work_dir: str, workspace_root: Path) -> tuple[bool, str]:
+    """
+    Walk bashlex AST in execution order, tracking `cd` to ensure no workspace escape.
+
+    Returns (is_safe, reason).
+    """
+    try:
+        ast = bashlex.parse(command)
+    except Exception:
+        return True, ""  # syntax errors caught by analyze_command
+
+    virtual_cwd = Path(work_dir).resolve()
+
+    def _resolve(target: str) -> Path | None:
+        """Resolve a cd target to an absolute Path, or None if unresolvable."""
+        if target == "-":
+            return None  # previous dir, can't track
+        if "$" in target or "`" in target or "$(" in target:
+            return None  # variable/command substitution
+        if target.startswith("~"):
+            return Path(os.path.expanduser(target)).resolve()
+        if target.startswith("/"):
+            return Path(target).resolve()
+        return (virtual_cwd / target).resolve()
+
+    def _walk_nodes(nodes: list, subshell: bool = False) -> tuple[bool, str]:
+        nonlocal virtual_cwd
+        for node in nodes:
+            kind = node.kind
+
+            # command node: check for cd
+            if kind == "command":
+                words = [p for p in node.parts if p.kind == "word"]
+                if words and words[0].word == "cd":
+                    # first non-flag argument is the target; None means cd with no args (= ~)
+                    target = next(
+                        (
+                            w.word
+                            for w in words[1:]
+                            if not (w.word.startswith("-") and w.word != "-")
+                        ),
+                        None,
+                    )
+                    if target == "-":
+                        return False, "'cd -' would escape workspace (unable to track previous dir)"
+                    resolved = _resolve(target or "~")
+                    if resolved is None:
+                        return False, f"Unresolvable cd target: {target or '~'}"
+                    if not resolved.is_relative_to(workspace_root):
+                        return False, f"cd to '{target or '~'}' would escape workspace"
+                    if not subshell:
+                        virtual_cwd = resolved
+
+            # recurse into compound structures
+            for lst in getattr(node, "list", []):
+                r = _walk_nodes([lst], subshell)
+                if not r[0]:
+                    return r
+            for part in getattr(node, "parts", []):
+                if hasattr(part, "kind"):
+                    r = _walk_nodes([part], subshell or kind == "subshell")
+                    if not r[0]:
+                        return r
+
+        return True, ""
+
+    return _walk_nodes(ast)
+
+
+def _has_blocked_interpreter(command: str) -> str | None:
+    """Check if command runs a blocked interpreter (python) in a non-FULL context.
+
+    Returns the blocked command name, or None if allowed.
+    """
+    try:
+        ast = bashlex.parse(command)
+    except Exception:
+        return None
+    for name in _walk_ast(ast):
+        if name in BLOCKED_INTERPRETERS:
+            return name
+        # python3.11, python312, etc.
+        if name.startswith("python"):
+            rest = name[6:]
+            if rest and rest.replace(".", "").isdigit():
+                return name
+    return None
+
+
 @tool
 class ShellTool(Tool):
     """Run a shell command and return the content."""
@@ -239,45 +334,67 @@ class ShellTool(Tool):
         # Strict mode: shell is disabled
         if ctx.permission == Permission.STRICT:
             logger.warning(f"Shell blocked in strict mode: {command[:100]}...")
-            return ToolResult(
-                content=(
-                    "Shell is disabled in 'strict' permission mode. "
-                    "Set `tool.permission` to `\"standard\"` or `\"full\"` in config.json to enable shell access."
-                ),
-                is_error=True,
+            raise PermissionDenied(
+                "Shell is disabled in 'strict' permission mode. "
+                'Set `tool.permission` to `"standard"` or `"full"` in config.json to enable shell access.'
             )
+
+        # Workspace check for standard mode
+        if ctx.permission != Permission.FULL:
+            cwd_path = Path(ctx.cwd).resolve()
+            work_path = Path(work_dir).resolve()
+            if not work_path.is_relative_to(cwd_path):
+                logger.warning(f"Shell blocked outside workspace: {work_dir}")
+                raise PermissionDenied(
+                    f"Cannot run shell outside workspace: {work_dir}\n"
+                    f"Current permission level is '{ctx.permission.value}'. "
+                    f'Set `tool.permission` to `"full"` in config.json to allow this.'
+                )
+
+            # Check that cd commands in the command stay within workspace
+            cd_safe, cd_reason = _check_cd_workspace(command, work_dir, cwd_path)
+            if not cd_safe:
+                logger.warning(f"Shell blocked cd escape: {command[:100]}... Reason: {cd_reason}")
+                raise PermissionDenied(
+                    f"cd blocked for workspace safety: {cd_reason}\n"
+                    f"Current permission level is '{ctx.permission.value}'. "
+                    f'Set `tool.permission` to `"full"` in config.json to allow this.'
+                )
+
+            # Block interpreters that bypass workspace checks (python etc.)
+            blocked = _has_blocked_interpreter(command)
+            if blocked:
+                logger.warning(f"Shell blocked interpreter: {command[:100]}...")
+                raise PermissionDenied(
+                    f"'{blocked}' is not allowed in shell under '{ctx.permission.value}' permission. "
+                    f"Use the Python tool instead, which has proper sandbox restrictions.\n"
+                    f'Set `tool.permission` to `"full"` in config.json to allow this.'
+                )
 
         # Analyze command for dangerous patterns
         is_safe, reason = analyze_command(command)
         if not is_safe:
             logger.warning(f"Blocked dangerous command: {command[:100]}... Reason: {reason}")
-            return ToolResult(
-                content=f"Command blocked for safety: {reason}\nCommand: {command}",
-                is_error=True,
-            )
+            raise ToolError(f"Command blocked for safety: {reason}\nCommand: {command}")
 
         logger.info(f"Shell command: {command}")
         logger.debug(f"Shell working directory: {work_dir}")
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=work_dir,
+            preexec_fn=os.setpgrp,
+        )
+
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=work_dir,
-                preexec_fn=os.setpgrp,
-            )
+            stdout_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=SHELL_TIMEOUT)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            logger.warning(f"Shell command terminated: {command}")
+            proc.kill()
+            await proc.wait()
+            raise ToolError("Command terminated")
 
-            try:
-                stdout_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=SHELL_TIMEOUT)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                logger.warning(f"Shell command terminated: {command}")
-                proc.kill()
-                await proc.wait()
-                return ToolResult(content="Command terminated", is_error=True)
-
-            stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
-            logger.debug(f"Shell exit code: {proc.returncode}")
-            return ToolResult(content=stdout, is_error=proc.returncode != 0)
-        except Exception as e:
-            logger.exception(f"Error executing shell command: {e}")
-            return ToolResult(content=f"Error: {type(e).__name__}: {e}", is_error=True)
+        stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
+        logger.debug(f"Shell exit code: {proc.returncode}")
+        return ToolResult(content=stdout, is_error=proc.returncode != 0)
